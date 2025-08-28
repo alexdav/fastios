@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npx convex deploy` - Deploy to production
 - `npx convex dashboard` - Open Convex dashboard
 
+Convex rules: @docs/convex_rules.txt
+
 ### Testing
 - `npm run test` - Run all tests (unit + e2e)
 - `npm run test:unit` - Run Jest unit tests

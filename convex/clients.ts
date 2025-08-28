@@ -163,6 +163,213 @@ export const listAgentClients = query({
   },
 });
 
+// Add a client as an agent
+export const addClientAsAgent = mutation({
+  args: {
+    email: v.string(),
+    name: v.string(),
+    phone: v.optional(v.string()),
+  },
+  returns: v.id("clients"),
+  handler: async (ctx, args) => {
+    const identity = await auth.getUserIdentity(ctx);
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the agent user record
+    const agentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!agentUser) {
+      throw new Error("Agent user not found");
+    }
+
+    // Get the agent profile
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", agentUser._id))
+      .first();
+
+    if (!agent) {
+      throw new Error("Agent profile not found");
+    }
+
+    // Check if user with this email already exists
+    let clientUser = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), args.email))
+      .first();
+
+    if (!clientUser) {
+      // Create a new user for the client
+      const userId = await ctx.db.insert("users", {
+        clerkId: `pending_${args.email}_${Date.now()}`, // Temporary ID until they sign up
+        email: args.email,
+        name: args.name,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      
+      clientUser = await ctx.db.get(userId);
+    }
+
+    if (!clientUser) {
+      throw new Error("Failed to create client user");
+    }
+
+    // Check if this client already exists for this agent
+    const existingClient = await ctx.db
+      .query("clients")
+      .withIndex("by_user", (q) => q.eq("userId", clientUser._id))
+      .filter((q) => q.eq(q.field("agentId"), agent._id))
+      .first();
+
+    if (existingClient) {
+      throw new Error("Client already exists for this agent");
+    }
+
+    // Create client profile
+    const clientId = await ctx.db.insert("clients", {
+      userId: clientUser._id,
+      agentId: agent._id,
+      phone: args.phone && args.phone.trim() !== "" ? args.phone : undefined,
+      status: "invited",
+      invitedAt: Date.now(),
+    });
+
+    return clientId;
+  },
+});
+
+// Update client information
+export const updateClient = mutation({
+  args: {
+    clientId: v.id("clients"),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await auth.getUserIdentity(ctx);
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the agent user record
+    const agentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!agentUser) {
+      throw new Error("Agent user not found");
+    }
+
+    // Get the agent profile
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", agentUser._id))
+      .first();
+
+    if (!agent) {
+      throw new Error("Agent profile not found");
+    }
+
+    // Get the client
+    const client = await ctx.db.get(args.clientId);
+    if (!client) {
+      throw new Error("Client not found");
+    }
+
+    // Verify this client belongs to this agent
+    if (client.agentId !== agent._id) {
+      throw new Error("Unauthorized: Client does not belong to this agent");
+    }
+
+    // Update client phone if provided
+    if (args.phone !== undefined) {
+      await ctx.db.patch(args.clientId, {
+        phone: args.phone && args.phone.trim() !== "" ? args.phone : undefined,
+      });
+    }
+
+    // Update user info if provided
+    if (args.name !== undefined || args.email !== undefined) {
+      const updates: Record<string, string | number> = { updatedAt: Date.now() };
+      if (args.name !== undefined) updates.name = args.name;
+      if (args.email !== undefined) updates.email = args.email;
+      
+      await ctx.db.patch(client.userId, updates);
+    }
+
+    return { success: true };
+  },
+});
+
+// Remove a client as an agent
+export const removeClient = mutation({
+  args: {
+    clientId: v.id("clients"),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await auth.getUserIdentity(ctx);
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the agent user record
+    const agentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!agentUser) {
+      throw new Error("Agent user not found");
+    }
+
+    // Get the agent profile
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", agentUser._id))
+      .first();
+
+    if (!agent) {
+      throw new Error("Agent profile not found");
+    }
+
+    // Get the client
+    const client = await ctx.db.get(args.clientId);
+    if (!client) {
+      throw new Error("Client not found");
+    }
+
+    // Verify this client belongs to this agent
+    if (client.agentId !== agent._id) {
+      throw new Error("Unauthorized: Client does not belong to this agent");
+    }
+
+    // Check if client is associated with any deals
+    const dealClients = await ctx.db
+      .query("dealClients")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    if (dealClients.length > 0) {
+      throw new Error("Cannot remove client: Client is associated with deals");
+    }
+
+    // Delete the client
+    await ctx.db.delete(args.clientId);
+
+    return { success: true };
+  },
+});
+
 // Delete client profile
 export const deleteClient = mutation({
   handler: async (ctx) => {
