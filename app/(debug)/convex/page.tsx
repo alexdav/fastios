@@ -8,9 +8,18 @@ import { useEffect, useState } from 'react'
 export default function ConvexDebugPage() {
   const { user, isLoaded: clerkLoaded, isSignedIn } = useUser()
   const currentUser = useQuery(api.users.getCurrentUser)
+  const userRole = useQuery(api.users.getUserRole)
+  const currentAgent = useQuery(api.agents.getCurrentAgent)
+  const currentClient = useQuery(api.clients.getCurrentClient)
+  const firstAgent = useQuery(api.agents.getFirstAgent)
   const createOrUpdateUser = useMutation(api.users.createOrUpdateUser)
-  const setUserRole = useMutation(api.users.setUserRole)
-  const [selectedRole, setSelectedRole] = useState<'agent' | 'client'>('agent')
+  const createAgent = useMutation(api.agents.createAgent)
+  const createClient = useMutation(api.clients.createClient)
+  const createDemoAgent = useMutation(api.agents.createDemoAgent)
+  const deleteAgent = useMutation(api.agents.deleteAgent)
+  const deleteClient = useMutation(api.clients.deleteClient)
+  const [creatingProfile, setCreatingProfile] = useState<'agent' | 'client' | null>(null)
+  const [deletingProfile, setDeletingProfile] = useState<'agent' | 'client' | null>(null)
 
   // Sync Clerk user with Convex database
   useEffect(() => {
@@ -21,20 +30,76 @@ export default function ConvexDebugPage() {
     }
   }, [isSignedIn, clerkLoaded, createOrUpdateUser])
 
-  // Update selected role when user data loads
-  useEffect(() => {
-    if (currentUser?.role) {
-      setSelectedRole(currentUser.role)
-    }
-  }, [currentUser])
-
-  const handleRoleChange = async (role: 'agent' | 'client') => {
+  const handleCreateAgentProfile = async () => {
     try {
-      await setUserRole({ role })
-      setSelectedRole(role)
-      console.log(`Role changed to ${role}`)
+      setCreatingProfile('agent')
+      // For demo, we need to find an agent to assign the client to
+      // In production, this would be handled differently
+      const allAgents = await createAgent({
+        phone: '555-0100',
+        company: 'Demo Realty',
+        licenseNumber: 'DRE-12345'
+      })
+      console.log('Agent profile created')
+      setCreatingProfile(null)
     } catch (error) {
-      console.error('Failed to change role:', error)
+      console.error('Failed to create agent profile:', error)
+      setCreatingProfile(null)
+    }
+  }
+
+  const handleCreateClientProfile = async () => {
+    try {
+      setCreatingProfile('client')
+      
+      // Always use or create a demo agent for testing
+      // (you wouldn't be a client of yourself)
+      let agentId: string
+      
+      // Check if there's any existing demo agent or other agent in the system
+      if (firstAgent) {
+        agentId = firstAgent._id
+        console.log('Using existing agent for client testing')
+      } else {
+        // Create a demo agent
+        console.log('Creating demo agent for client testing...')
+        agentId = await createDemoAgent()
+        console.log('Demo agent created with ID:', agentId)
+      }
+      
+      await createClient({
+        agentId: agentId,
+        phone: '555-0200'
+      })
+      console.log('Client profile created')
+      setCreatingProfile(null)
+    } catch (error) {
+      console.error('Failed to create client profile:', error)
+      setCreatingProfile(null)
+    }
+  }
+
+  const handleDeleteAgentProfile = async () => {
+    try {
+      setDeletingProfile('agent')
+      await deleteAgent()
+      console.log('Agent profile deleted')
+      setDeletingProfile(null)
+    } catch (error) {
+      console.error('Failed to delete agent profile:', error)
+      setDeletingProfile(null)
+    }
+  }
+
+  const handleDeleteClientProfile = async () => {
+    try {
+      setDeletingProfile('client')
+      await deleteClient()
+      console.log('Client profile deleted')
+      setDeletingProfile(null)
+    } catch (error) {
+      console.error('Failed to delete client profile:', error)
+      setDeletingProfile(null)
     }
   }
 
@@ -94,35 +159,93 @@ export default function ConvexDebugPage() {
               </ul>
             </div>
             
+            <div className="bg-purple-50 border border-purple-300 px-4 py-3 rounded">
+              <h2 className="font-bold mb-2">👤 Profile Status</h2>
+              <div className="flex gap-4 text-sm">
+                <span className={currentUser ? 'text-green-600' : 'text-gray-400'}>
+                  {currentUser ? '✓' : '○'} User
+                </span>
+                <span className={currentAgent ? 'text-green-600' : 'text-gray-400'}>
+                  {currentAgent ? '✓' : '○'} Agent
+                </span>
+                <span className={currentClient ? 'text-green-600' : 'text-gray-400'}>
+                  {currentClient ? '✓' : '○'} Client
+                </span>
+              </div>
+              {userRole && (
+                <p className="text-sm text-purple-700 mt-2">
+                  Current role: <span className="font-bold">{userRole}</span>
+                </p>
+              )}
+            </div>
+            
             <div className="bg-yellow-50 border border-yellow-300 px-4 py-3 rounded">
               <h2 className="font-bold mb-2">🧪 Development Tools</h2>
               <div className="mb-4">
-                <p className="text-sm text-yellow-900 mb-3">Change your user role for testing:</p>
+                <p className="text-sm text-yellow-900 mb-3">Create test profiles:</p>
                 <div className="flex gap-4">
                   <button
-                    onClick={() => handleRoleChange('agent')}
+                    onClick={handleCreateAgentProfile}
+                    disabled={!!currentAgent || creatingProfile !== null || deletingProfile !== null}
                     className={`px-4 py-2 rounded font-medium transition ${
-                      selectedRole === 'agent'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      currentAgent
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : creatingProfile === 'agent'
+                        ? 'bg-blue-400 text-white'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
                     }`}
                   >
-                    Agent Role
+                    {currentAgent ? 'Agent Profile Exists' : creatingProfile === 'agent' ? 'Creating...' : 'Create Agent Profile'}
                   </button>
                   <button
-                    onClick={() => handleRoleChange('client')}
+                    onClick={handleCreateClientProfile}
+                    disabled={!!currentClient || creatingProfile !== null || deletingProfile !== null}
                     className={`px-4 py-2 rounded font-medium transition ${
-                      selectedRole === 'client'
-                        ? 'bg-green-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      currentClient
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : creatingProfile === 'client'
+                        ? 'bg-green-400 text-white'
+                        : 'bg-green-600 text-white hover:bg-green-700'
                     }`}
                   >
-                    Client Role
+                    {currentClient ? 'Client Profile Exists' : creatingProfile === 'client' ? 'Creating...' : 'Create Client Profile'}
                   </button>
                 </div>
-                <p className="text-xs text-yellow-700 mt-3">
-                  Current role: <span className="font-bold">{currentUser?.role || 'Not set'}</span>
-                </p>
+                {(currentAgent || currentClient) && (
+                  <div className="mt-4 flex gap-4">
+                    {currentAgent && (
+                      <button
+                        onClick={handleDeleteAgentProfile}
+                        disabled={deletingProfile !== null || creatingProfile !== null}
+                        className={`px-4 py-2 rounded font-medium transition ${
+                          deletingProfile === 'agent'
+                            ? 'bg-red-400 text-white'
+                            : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
+                      >
+                        {deletingProfile === 'agent' ? 'Deleting...' : 'Delete Agent Profile'}
+                      </button>
+                    )}
+                    {currentClient && (
+                      <button
+                        onClick={handleDeleteClientProfile}
+                        disabled={deletingProfile !== null || creatingProfile !== null}
+                        className={`px-4 py-2 rounded font-medium transition ${
+                          deletingProfile === 'client'
+                            ? 'bg-red-400 text-white'
+                            : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
+                      >
+                        {deletingProfile === 'client' ? 'Deleting...' : 'Delete Client Profile'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!currentAgent && !currentClient && (
+                  <p className="text-xs text-yellow-700 mt-3">
+                    Create test profiles to explore different user roles and features
+                  </p>
+                )}
               </div>
               <div className="border-t border-yellow-200 pt-3">
                 <p className="text-sm font-semibold text-yellow-900 mb-2">Quick Links:</p>

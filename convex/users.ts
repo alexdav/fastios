@@ -47,13 +47,11 @@ export const createOrUpdateUser = mutation({
       });
       return existingUser._id;
     } else {
-      // Create new user - default to agent role for testing
-      // In production, you might want to determine this differently
+      // Create new user
       const newUserId = await ctx.db.insert("users", {
         clerkId: userId,
         email,
         name,
-        role: "agent", // Default to agent for testing - change as needed
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -62,35 +60,86 @@ export const createOrUpdateUser = mutation({
   },
 });
 
-// Mutation to change user role for testing purposes
-export const setUserRole = mutation({
-  args: { 
-    role: v.union(v.literal("agent"), v.literal("client"))
-  },
-  handler: async (ctx, { role }) => {
+// Get user role based on agents/clients tables
+export const getUserRole = query({
+  handler: async (ctx) => {
     const identity = await auth.getUserIdentity(ctx);
     if (!identity) {
-      throw new Error("Not authenticated");
+      return null;
     }
-    
-    const userId = identity.subject;
-    
-    // Find the user
+
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", userId))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
-    
+
     if (!user) {
-      throw new Error("User not found");
+      return null;
     }
-    
-    // Update the role
-    await ctx.db.patch(user._id, {
-      role,
-      updatedAt: Date.now(),
-    });
-    
-    return user._id;
+
+    // Check if user is an agent
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+
+    if (agent) {
+      return "agent";
+    }
+
+    // Check if user is a client
+    const client = await ctx.db
+      .query("clients")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+
+    if (client) {
+      return "client";
+    }
+
+    // User has no role yet
+    return null;
+  },
+});
+
+// Get user with role included
+export const getCurrentUserWithRole = query({
+  handler: async (ctx) => {
+    const identity = await auth.getUserIdentity(ctx);
+    if (!identity) {
+      return null;
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      return null;
+    }
+
+    // Check if user is an agent
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+
+    if (agent) {
+      return { ...user, role: "agent" as const };
+    }
+
+    // Check if user is a client
+    const client = await ctx.db
+      .query("clients")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+
+    if (client) {
+      return { ...user, role: "client" as const };
+    }
+
+    // User has no role yet
+    return { ...user, role: null };
   },
 });

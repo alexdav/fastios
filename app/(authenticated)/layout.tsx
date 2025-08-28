@@ -17,6 +17,7 @@ export default function AuthenticatedLayout({
   const router = useRouter()
   const pathname = usePathname()
   const currentUser = useQuery(api.users.getCurrentUser)
+  const userRole = useQuery(api.users.getUserRole)
   const [viewMode, setViewMode] = useState<'agent' | 'client' | null>(null)
 
   useEffect(() => {
@@ -26,13 +27,13 @@ export default function AuthenticatedLayout({
   }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
-    if (currentUser) {
-      setViewMode(currentUser.role as 'agent' | 'client')
+    if (userRole) {
+      setViewMode(userRole as 'agent' | 'client')
     }
-  }, [currentUser])
+  }, [userRole])
 
   // Show loading state while checking auth
-  if (!isLoaded || !currentUser || !viewMode) {
+  if (!isLoaded || !currentUser || userRole === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -41,6 +42,29 @@ export default function AuthenticatedLayout({
         </div>
       </div>
     )
+  }
+
+  // If user has no role, redirect to setup
+  if (userRole === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Welcome to FastiOS!</h2>
+          <p className="text-slate-600 mb-6">You need to set up your profile to continue.</p>
+          <Link 
+            href="/convex" 
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 inline-block"
+          >
+            Set Up Profile
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // viewMode should be set by now
+  if (!viewMode) {
+    return null
   }
 
   // Define navigation based on view mode
@@ -62,7 +86,7 @@ export default function AuthenticatedLayout({
   ]
 
   const navigation = viewMode === 'agent' ? agentNavigation : clientNavigation
-  const isAgent = currentUser.role === 'agent'
+  const isAgent = userRole === 'agent'
 
   return (
     <div className="min-h-screen bg-gray-50">
