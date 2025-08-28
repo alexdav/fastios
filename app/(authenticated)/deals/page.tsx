@@ -248,7 +248,11 @@ export default function DealsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {deals.map((deal) => (
-            <Card key={deal._id} className="hover:shadow-lg transition-shadow">
+            <Card 
+              key={deal._id} 
+              className="hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => window.location.href = `/deals/${deal._id}`}
+            >
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div className="flex-1">

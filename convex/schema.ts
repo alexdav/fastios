@@ -95,4 +95,31 @@ export default defineSchema({
     .index("by_deal", ["dealId"])
     .index("by_category", ["category"])
     .index("by_deal_category", ["dealId", "category"]),
+
+  documentAccessTokens: defineTable({
+    token: v.string(),
+    sessionId: v.string(), // Unique session identifier
+    documentId: v.id("documents"),
+    userId: v.id("users"),
+    userAgent: v.string(), // Clerk user ID for additional validation
+    ipAddress: v.optional(v.string()), // Optional IP tracking
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    usedAt: v.optional(v.number()), // When token was first used
+    usageCount: v.number(), // Track usage to prevent replay attacks
+  })
+    .index("by_token", ["token"])
+    .index("by_document", ["documentId"])
+    .index("by_user", ["userId"])
+    .index("by_session", ["sessionId"]),
+
+  documentAccessLogs: defineTable({
+    documentId: v.id("documents"),
+    userId: v.id("users"),
+    accessType: v.string(), // 'view' | 'download'
+    accessedAt: v.number(),
+  })
+    .index("by_document", ["documentId"])
+    .index("by_user", ["userId"])
+    .index("by_document_user", ["documentId", "userId"]),
 });
